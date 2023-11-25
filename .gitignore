@@ -1,72 +1,33 @@
-# Maven
+HELP.md
 target/
-*.iml
-*.jar
-*.war
-*.ear
-mvnw
-mvnw.cmd
-.mvn/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
 
-# IntelliJ
-.idea/
-
-# Eclipse
+### STS ###
+.apt_generated
 .classpath
+.factorypath
 .project
-.settings/
+.settings
+.springBeans
+.sts4-cache
 
-# Logs
-*.log
-*.log.*
-log/
-logs/
-
-# Compiled class files
-*.class
-
-# BlueJ
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package files
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs
-hs_err_pid*
-replay_pid*
-
-# Node.js
-node_modules/
-
-# React build output
-/build/
-/static/
-
-# Compiled Tailwind CSS files
-/src/main/resources/static/css/
-
-# H2 Database files
-.h2.*
-
-# Spring Boot DevTools
-.restart/
-
-# Thymeleaf cache
-/src/main/resources/templates/|*.*
-
-# IDE files
+### IntelliJ IDEA ###
+.idea
+*.iws
 *.iml
 *.ipr
-*.iws
-*.log
-*.log.*
-*.log/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
