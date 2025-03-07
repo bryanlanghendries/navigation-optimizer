@@ -1,10 +1,21 @@
-import { useContext, useEffect, useRef, useState } from "react";
-import { ContextDetailsForm } from "../contextDetailsForm.ts";
-import { SurveyCreator, SurveyCreatorComponent } from "survey-creator-react";
+import { Box, Stack, Typography, useTheme } from "@mui/material";
+import { useNavigate, useParams } from "react-router-dom";
+import { apiGetFormByExternalUuid, apiPostForm } from "../apiForms";
+import { useEffect, useState } from "react";
+import { Model, Survey } from "survey-react-ui";
 import "survey-core/defaultV2.css";
-import "survey-creator-core/survey-creator-core.min.css";
-import { Serializer, FunctionFactory } from "survey-core";
-import { v4 as uuidv4 } from "uuid";
+import {
+  ButtonOutlinedCancel,
+  CONST_PAGES_WEBEDI,
+  PageMode,
+  PageWrap,
+} from "lib";
+import { useAtomNotification } from "lib/src/atoms/AtomNotification";
+import { useFormView } from "./UseFormView";
+import { LightTheme } from "./themes/lightmode";
+import { DarkTheme } from "./themes/darkmode";
+import { FunctionFactory } from "survey-core";
+//import { generateInvoice } from "./generateInvoice";
 
 function getInfo(this: any, params: any[]): any {
   const qName = params[2];
@@ -12,6 +23,7 @@ function getInfo(this: any, params: any[]): any {
   const question = this.survey.getQuestionByName(qName);
 
   if (question && question.selectedItem) {
+    console.log(question.selectedItem.originalItem);
     const sourceItem = question.selectedItem.originalItem;
     return sourceItem ? sourceItem[attributeName] : null;
   }
@@ -34,77 +46,185 @@ FunctionFactory.Instance.register("sumCalc", sumCalc);
 
 FunctionFactory.Instance.register("getInfo", getInfo);
 
-export const SectionFormCreator = () => {
-  const {
-    utilDetailsForm,
-    utilApiGetFormById: { data, utilQuery },
-    utilUseIsPending,
-  } = useContext(ContextDetailsForm);
+//
+interface FormViewProps {
+  pageMode: PageMode;
+}
 
-  const creatorRef = useRef<SurveyCreator | null>(null);
-  const [isCreatorReady, setIsCreatorReady] = useState(false);
+//
+export const FormView = ({ pageMode }: FormViewProps) => {
+  const { configurationId: externalUuid } = useParams();
+  const [model, setModel] = useState<Model>(new Model());
 
-  // Initialize the Survey Creator only once
-  useEffect(() => {
-    if (!creatorRef.current) {
-      initializeSurveyCreator();
-    }
-  }, []);
+  const { notifySuccess, notifyError } = useAtomNotification();
 
-  // Update the Survey Creator with the fetched data and set the state
-  useEffect(() => {
-    if (data && !utilQuery.isFetching && creatorRef.current) {
-      creatorRef.current.JSON = data.formData;
-      creatorRef.current.saveSurveyFunc = saveSurvey;
-      creatorRef.current.isAutoSave = true;
-      setIsCreatorReady(true);
-    }
-  }, [data, utilQuery.isFetching]);
+  const navigate = useNavigate();
 
-  // Function to initialize the Survey Creator
-  const initializeSurveyCreator = () => {
-    const creator = new SurveyCreator();
-    creatorRef.current = creator;
+  const theme = useTheme();
 
-    // Add UUID property to questions
-    Serializer.addProperty("question", { name: "uuid", category: "general" });
-    Serializer.findProperty("question", "uuid").readOnly = true;
-    Serializer.findProperty("question", "uuid").visible = false;
+  model.applyTheme(theme.palette.mode === "dark" ? DarkTheme : LightTheme);
 
-    // Make sure that dropdowns always attach the original item
-    Serializer.addProperty("dropdown", {
-      name: "attachOriginalItems",
-      category: "general",
-      default: true,
-    });
+  //
+  const { crumbs } = useFormView({ pageMode });
 
-    // Generate UUID for new questions
-    creator.onQuestionAdded.add((_sender, options) => {
-      const question = options.question;
-      question.uuid = uuidv4();
-    });
-  };
-
-  // Save the survey
-  const saveSurvey = (saveNo: any, callback: any) => {
-    utilUseIsPending.startPending();
-
-    if (creatorRef.current) {
-      const surveyJSON = creatorRef.current.getSurveyJSON();
-      utilDetailsForm.utilFormDetailsForm.setValue("formData", surveyJSON);
-      callback(saveNo, true);
-    }
-
-    utilUseIsPending.stopPending();
-  };
-
-  if (!isCreatorReady) {
-    return null;
+  function saveSurveyData(survey: Model) {
+    const data = survey.data;
+    data.pageNo = survey.currentPageNo;
+    if (externalUuid)
+      window.sessionStorage.setItem(externalUuid, JSON.stringify(data));
   }
 
+  //
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiGetFormByExternalUuid(externalUuid);
+        const newModel = new Model(res.data.formData);
+        newModel.showCompletedPage = false;
+        newModel.onValueChanged.add(saveSurveyData);
+        newModel.onCurrentPageChanged.add(saveSurveyData);
+        newModel.addNavigationItem({
+          id: "sv-nav-clear-page",
+          title: "Clear Form",
+          action: () => {
+            newModel.clear();
+            if (externalUuid) sessionStorage.removeItem(externalUuid);
+          },
+          css: "nav-button",
+          innerCss: "sd-btn nav-input",
+        });
+        let localData;
+        if (externalUuid)
+          localData = window.sessionStorage.getItem(externalUuid);
+        if (localData) newModel.data = JSON.parse(localData);
+        setModel(newModel);
+      } catch (error) {
+        console.log(error);
+      }
+    })();
+  }, [externalUuid]);
+
+  const getAnswer = (element: any, response: any) => {
+    const answer =
+      response[element.name] !== undefined
+        ? response[element.name]
+        : element.description;
+
+    if (answer === undefined || answer === null) {
+      return null;
+    }
+    return answer;
+  };
+
+  const extractQuestions = (elements: any[], response: any): any[] => {
+    return elements.map((element: any) => {
+      const answer = getAnswer(element, response);
+
+      if (element.type === "panel" || element.type === "paneldynamic") {
+        if (Array.isArray(element.elements)) {
+          return {
+            ...element,
+            elements: extractQuestions(element.elements, response),
+          };
+        }
+      }
+
+      return {
+        ...element,
+        answer: answer,
+      };
+    });
+  };
+
+  const mapElements = (page: any, response: any): any => {
+    const mappedPage = { ...page };
+
+    mappedPage.elements = mappedPage.elements.map((element: any) => {
+      const answer = getAnswer(element, response);
+
+      if (element.type === "panel" || element.type === "paneldynamic") {
+        if (Array.isArray(element.elements)) {
+          return {
+            ...element,
+            elements: extractQuestions(element.elements, response),
+          };
+        }
+      }
+
+      return {
+        ...element,
+        answer: answer,
+      };
+    });
+
+    return mappedPage;
+  };
+
+  const handleError = (error: any) => {
+    console.error("error: onFormSubmit", error);
+    notifyError(
+      <Stack>
+        <Typography>Failed to complete survey</Typography>
+        <Box>{`${
+          error.response?.data?.details || error.response?.data?.message
+        }`}</Box>
+      </Stack>
+    );
+  };
+
+  const handleSuccess = () => {
+    notifySuccess(<Typography>Successfully completed survey</Typography>);
+  };
+
+  const submitForm = async (dtoMontovaRequest: any, externalUuid: string) => {
+    try {
+      sessionStorage.removeItem(externalUuid);
+      await apiPostForm(dtoMontovaRequest, externalUuid);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const onComplete = async (form: any) => {
+    const json = form.jsonObj;
+    const response = form.valuesHash;
+
+    const allPagesWithAnswers = json?.pages.map((page: any) =>
+      mapElements(page, response)
+    );
+
+    const dtoMontovaRequest = {
+      data: {
+        pages: allPagesWithAnswers,
+      },
+    };
+
+    try {
+      //generateInvoice(dtoMontovaRequest);
+      await submitForm(dtoMontovaRequest, externalUuid as string);
+      handleSuccess();
+    } catch (error: any) {
+      handleError(error);
+    }
+    navigate(CONST_PAGES_WEBEDI.forms.overview.routepath);
+  };
+
   return (
-    <>
-      <SurveyCreatorComponent creator={creatorRef.current!} />
-    </>
+    <PageWrap
+      crumbs={crumbs}
+      footer={{
+        right: (
+          <Stack direction="row" gap={1} pr={1}>
+            <ButtonOutlinedCancel
+              onClick={() =>
+                navigate(CONST_PAGES_WEBEDI.forms.overview.routepath)
+              }
+            />
+          </Stack>
+        ),
+      }}
+    >
+      <Survey model={model} onComplete={onComplete} />
+    </PageWrap>
   );
 };
